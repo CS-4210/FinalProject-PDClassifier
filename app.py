@@ -3,30 +3,36 @@ import pandas as pd
 import joblib
 import numpy as np
 
-
+# path to the trained model saved by train.py
 MODEL_PATH = "model/parkinsons_model.pkl"
+# path to teh saved feature col list
 FEATURE_PATH = "model/feature_columns.pkl"
+# dataset path used for loading example patients
 DATA_PATH = "data/parkinsons.data"
 
-
+# cache the model artifacts so streamlit doesn't reload on every interation
 @st.cache_resource
 def load_artifacts():
     model = joblib.load(MODEL_PATH)
     feature_columns = joblib.load(FEATURE_PATH)
     return model, feature_columns
 
-
+# convert streamlit input values into the format expected by model
 def make_prediction(model, feature_columns, input_dict):
+    # convert input dictionary into a one row DF
     input_df = pd.DataFrame([input_dict])
+    # match the exact feat order used during training
     input_df = input_df.reindex(columns=feature_columns)
 
+    # predict class label + PD probability
     prediction = model.predict(input_df)[0]
     probability = model.predict_proba(input_df)[0][1]
 
     return prediction, probability, input_df
 
-
+# groups features into categories to make input for easier
 def group_features(feature_columns):
+    # create empty feature groups for the frontend tabs
     groups = {
         "Frequency": [],
         "Jitter": [],
@@ -35,6 +41,7 @@ def group_features(feature_columns):
         "Other": []
     }
 
+    # assign each feature to a group based on keywords
     for feature in feature_columns:
         lower = feature.lower()
 
@@ -51,19 +58,22 @@ def group_features(feature_columns):
 
     return groups
 
-
+# cache real example patients from dataset for inputs
 @st.cache_data
 def load_example_patients(feature_columns):
+    # load original dataset so eamples come form  actual rows
     df = pd.read_csv(DATA_PATH)
+    # remove hidden whitespace from col names
     df.columns = df.columns.str.strip()
 
-    # Real examples from dataset
+    # select 1 real healthy sample and one real PD sample
     healthy_row = df[df["status"] == 0].iloc[0]
     pd_row = df[df["status"] == 1].iloc[0]
 
-    # Remove non-feature columns
+    # remove cols that aren't modle input faatures
     drop_cols = ["name", "sourcname", "status"]
 
+    # convert rows into dictionaries matching the trained model's feature order
     healthy_row = healthy_row.drop(labels=[c for c in drop_cols if c in healthy_row.index])
     pd_row = pd_row.drop(labels=[c for c in drop_cols if c in pd_row.index])
 
@@ -72,7 +82,7 @@ def load_example_patients(feature_columns):
 
     return healthy_example, pd_example
 
-
+# genreate a simple explanation based on model confideence 
 def explain_prediction(probability):
     if probability >= 0.75:
         return (
@@ -96,17 +106,19 @@ def explain_prediction(probability):
             "The input voice features appear less consistent with Parkinson's-like acoustic instability."
         )
 
-
+# configure browser tab title, icon, and page layout 
 st.set_page_config(
     page_title="Parkinson's Voice Classifier",
     page_icon="🧠",
     layout="wide"
 )
 
+# load model, feature list, feature groups, and example patients
 model, feature_columns = load_artifacts()
 feature_groups = group_features(feature_columns)
 healthy_example, pd_example = load_example_patients(feature_columns)
 
+# sidebar nav (multi-page dashboard)
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
@@ -117,11 +129,12 @@ st.sidebar.divider()
 st.sidebar.caption("Educational ML prototype")
 st.sidebar.caption("Not for medical diagnosis")
 
+# home page to explain project purpose and piepline 
 if page == "Home":
-    st.title("Parkinson's Disease Voice Classifier")
+    st.title("Parkinson's Disease Voice Classifier - Hasti Abbasi")
     st.subheader("An interactive ML prototype for Parkinson's prediction from biomedical voice features")
 
-    st.warning("This tool is for educational purposes only and is not a medical diagnosis system.")
+    # st.warning("This tool is for educational purposes only and is not a medical diagnosis system.")
 
     col1, col2, col3 = st.columns(3)
 
@@ -159,21 +172,26 @@ if page == "Home":
         """
     )
 
+# single pred page allows example or custom patient predition 
 elif page == "Single Prediction":
     st.title("Single Patient Prediction")
 
+    # lets user choose between real examples or manually entered vals
     input_mode = st.radio(
         "Choose input mode:",
         ["Parkinson's example", "Healthy example", "Custom manual input"],
         horizontal=True
     )
 
+    # use real PD example from teh dataset
     if input_mode == "Parkinson's example":
         user_input = pd_example.copy()
         st.info("Using a pre-filled Parkinson's-like example from the dataset style.")
+    # use real healthy example
     elif input_mode == "Healthy example":
         user_input = healthy_example.copy()
         st.info("Using a pre-filled healthy-like example from the dataset style.")
+    # custom mode where build input wdiges are grouped by feature type
     else:
         user_input = {}
 
@@ -203,9 +221,11 @@ elif page == "Single Prediction":
 
     st.divider()
 
+    # run trained model when user clicks the prediction button 
     if st.button("Run Prediction", type="primary"):
         prediction, probability, input_df = make_prediction(model, feature_columns, user_input)
 
+        # show the prediction result + confidence score
         result_col, prob_col = st.columns([1, 1])
 
         with result_col:
@@ -215,6 +235,7 @@ elif page == "Single Prediction":
                 st.success("Prediction: Healthy")
 
         with prob_col:
+            # display probaility using text and progress bar
             st.metric("Probability of Parkinson's", f"{probability:.2%}")
             st.progress(float(probability))
 
@@ -224,6 +245,7 @@ elif page == "Single Prediction":
         st.subheader("Model Input Used")
         st.dataframe(input_df, use_container_width=True)
 
+# batch prediction page allows csv upload + prediction for many samples
 elif page == "Batch Prediction":
     st.title("Batch Prediction")
 
@@ -237,22 +259,28 @@ elif page == "Batch Prediction":
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
     if uploaded_file is not None:
+        # read teh uploaded csv into a DF
         batch_df = pd.read_csv(uploaded_file)
 
+        # remove identifies cols if they appear in teh uploaded file
         if "name" in batch_df.columns:
             batch_df = batch_df.drop(columns=["name"])
 
+        # remove true labels before prediction if teh uploaded CSv includes them
         if "status" in batch_df.columns:
             true_labels = batch_df["status"]
             batch_df = batch_df.drop(columns=["status"])
         else:
             true_labels = None
 
+        # reorder uploaded data to match the model's expected feature order
         batch_df = batch_df.reindex(columns=feature_columns)
 
+        # predict labels + PD probaiilities for every uploaded row
         predictions = model.predict(batch_df)
         probabilities = model.predict_proba(batch_df)[:, 1]
 
+        # add model outputs to the uploaded data for display and download
         results = batch_df.copy()
         results["prediction"] = predictions
         results["prediction_label"] = np.where(predictions == 1, "Parkinson's Disease", "Healthy")
@@ -270,6 +298,7 @@ elif page == "Batch Prediction":
             "text/csv"
         )
 
+# modle insights shows model summary and feature imporatnce
 elif page == "Model Insights":
     st.title("Model Insights")
 
@@ -290,15 +319,18 @@ elif page == "Model Insights":
         """
     )
 
+    # random forest exposes feature importance to exlain model
     if hasattr(model.named_steps["classifier"], "feature_importances_"):
         importances = model.named_steps["classifier"].feature_importances_
 
+        # pair each feature name with importance score
         importance_df = pd.DataFrame({
             "Feature": feature_columns,
             "Importance": importances
         }).sort_values("Importance", ascending=False)
 
         st.subheader("Top Feature Importances")
+        # show top features using table and bar chart
         st.dataframe(importance_df, use_container_width=True)
 
         st.bar_chart(importance_df.set_index("Feature").head(15))
@@ -311,7 +343,7 @@ elif page == "Model Insights":
         for the classifier.
         """
     )
-
+# about page shows project backgorund, dataset details, etc.
 elif page == "About":
     st.title("About This Project")
 
@@ -338,9 +370,5 @@ elif page == "About":
         - `app.py`: Streamlit frontend
         - `model/`: saved trained model and feature list
 
-        ### Disclaimer
-
-        This prototype is for class demonstration and educational use only.
-        It is not intended for diagnosis or medical decision-making.
         """
     )
