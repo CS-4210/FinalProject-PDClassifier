@@ -15,14 +15,127 @@ def load_artifacts():
     return model, feature_columns
 
 
-def predict(model, feature_columns, user_input):
-    input_df = pd.DataFrame([user_input])
+def make_prediction(model, feature_columns, input_dict):
+    input_df = pd.DataFrame([input_dict])
     input_df = input_df.reindex(columns=feature_columns)
 
     prediction = model.predict(input_df)[0]
     probability = model.predict_proba(input_df)[0][1]
 
     return prediction, probability, input_df
+
+
+def group_features(feature_columns):
+    groups = {
+        "Frequency": [],
+        "Jitter": [],
+        "Shimmer": [],
+        "Noise / Nonlinear": [],
+        "Other": []
+    }
+
+    for feature in feature_columns:
+        lower = feature.lower()
+
+        if "fo" in lower or "fhi" in lower or "flo" in lower:
+            groups["Frequency"].append(feature)
+        elif "jitter" in lower or "rap" in lower or "ppq" in lower or "ddp" in lower:
+            groups["Jitter"].append(feature)
+        elif "shimmer" in lower or "apq" in lower or "dda" in lower:
+            groups["Shimmer"].append(feature)
+        elif "nhr" in lower or "hnr" in lower or "rpde" in lower or "dfa" in lower or "ppe" in lower or "spread" in lower or "d2" in lower:
+            groups["Noise / Nonlinear"].append(feature)
+        else:
+            groups["Other"].append(feature)
+
+    return groups
+
+
+def get_default_examples(feature_columns):
+    healthy_example = {feature: 0.0 for feature in feature_columns}
+    pd_example = {feature: 0.0 for feature in feature_columns}
+
+    healthy_values = {
+        "MDVP:Fo(Hz)": 198.116,
+        "MDVP:Fhi(Hz)": 233.099,
+        "MDVP:Flo(Hz)": 174.478,
+        "MDVP:Jitter(%)": 0.00298,
+        "MDVP:Jitter(Abs)": 0.000015,
+        "MDVP:RAP": 0.00153,
+        "MDVP:PPQ": 0.00173,
+        "Jitter:DDP": 0.00459,
+        "MDVP:Shimmer": 0.01921,
+        "MDVP:Shimmer(dB)": 0.165,
+        "Shimmer:APQ3": 0.01013,
+        "Shimmer:APQ5": 0.01263,
+        "MDVP:APQ": 0.01512,
+        "Shimmer:DDA": 0.03039,
+        "NHR": 0.01035,
+        "HNR": 26.138,
+        "RPDE": 0.414783,
+        "DFA": 0.815285,
+        "spread1": -4.813031,
+        "spread2": 0.266482,
+        "D2": 2.301442,
+        "PPE": 0.284654
+    }
+
+    pd_values = {
+        "MDVP:Fo(Hz)": 119.992,
+        "MDVP:Fhi(Hz)": 157.302,
+        "MDVP:Flo(Hz)": 74.997,
+        "MDVP:Jitter(%)": 0.00784,
+        "MDVP:Jitter(Abs)": 0.00007,
+        "MDVP:RAP": 0.00370,
+        "MDVP:PPQ": 0.00554,
+        "Jitter:DDP": 0.01109,
+        "MDVP:Shimmer": 0.04374,
+        "MDVP:Shimmer(dB)": 0.426,
+        "Shimmer:APQ3": 0.02182,
+        "Shimmer:APQ5": 0.03130,
+        "MDVP:APQ": 0.02971,
+        "Shimmer:DDA": 0.06545,
+        "NHR": 0.02211,
+        "HNR": 21.033,
+        "RPDE": 0.414783,
+        "DFA": 0.815285,
+        "spread1": -4.813031,
+        "spread2": 0.266482,
+        "D2": 2.301442,
+        "PPE": 0.284654
+    }
+
+    for feature in feature_columns:
+        if feature in healthy_values:
+            healthy_example[feature] = healthy_values[feature]
+        if feature in pd_values:
+            pd_example[feature] = pd_values[feature]
+
+    return healthy_example, pd_example
+
+
+def explain_prediction(probability):
+    if probability >= 0.75:
+        return (
+            "The model is highly confident that this sample resembles the Parkinson's class. "
+            "This may be associated with stronger irregularities in voice stability, such as jitter, shimmer, "
+            "or nonlinear acoustic patterns."
+        )
+    elif probability >= 0.50:
+        return (
+            "The model leans toward Parkinson's Disease, but the confidence is moderate. "
+            "A few acoustic features may be pushing the prediction upward."
+        )
+    elif probability >= 0.25:
+        return (
+            "The model leans toward the healthy class, but the confidence is moderate. "
+            "Some features may still overlap with Parkinson's-like voice patterns."
+        )
+    else:
+        return (
+            "The model is highly confident that this sample resembles the healthy class. "
+            "The input voice features appear less consistent with Parkinson's-like acoustic instability."
+        )
 
 
 st.set_page_config(
@@ -32,140 +145,243 @@ st.set_page_config(
 )
 
 model, feature_columns = load_artifacts()
+feature_groups = group_features(feature_columns)
+healthy_example, pd_example = get_default_examples(feature_columns)
 
-st.title("Parkinson's Disease Voice Classifier")
-st.caption("Machine learning prototype using biomedical voice features")
-
-st.warning(
-    "This app is for educational demonstration only. It is not a medical diagnosis tool."
+st.sidebar.title("Navigation")
+page = st.sidebar.radio(
+    "Go to",
+    ["Home", "Single Prediction", "Batch Prediction", "Model Insights", "About"]
 )
 
-left_col, right_col = st.columns([1, 1])
+st.sidebar.divider()
+st.sidebar.caption("Educational ML prototype")
+st.sidebar.caption("Not for medical diagnosis")
 
-with left_col:
-    st.subheader("Project Motivation")
-    st.write(
-        """
-        This project predicts Parkinson's Disease using voice measurements such as 
-        fundamental frequency, jitter, shimmer, and harmonic-to-noise features.
-        
-        The motivation comes from prior research experience in Parkinson's-focused 
-        cyber-physical systems and AI-based motor scoring.
-        """
-    )
+if page == "Home":
+    st.title("Parkinson's Disease Voice Classifier")
+    st.subheader("An interactive ML prototype for Parkinson's prediction from biomedical voice features")
 
-    st.subheader("How the Pipeline Works")
+    st.warning("This tool is for educational purposes only and is not a medical diagnosis system.")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Input Modality", "Voice Features")
+    col2.metric("Model Type", "Random Forest")
+    col3.metric("Prediction Task", "Binary Classification")
+
+    st.divider()
+
     st.markdown(
         """
-        1. Load biomedical voice features  
-        2. Preprocess missing values  
-        3. Train a machine learning classifier  
-        4. Predict Parkinson's status  
-        5. Display confidence and feature values  
+        ### What this app does
+
+        This demo predicts whether a voice sample is more consistent with a healthy control or a Parkinson's Disease sample.
+        It uses biomedical voice measurements such as:
+
+        - Fundamental frequency
+        - Jitter
+        - Shimmer
+        - Noise-to-harmonics ratio
+        - Nonlinear vocal features
+
+        ### Why this matters
+
+        Parkinson's Disease can affect speech and vocal stability. Acoustic features provide a low-cost way to explore
+        machine learning-based screening tools.
         """
     )
 
-with right_col:
-    st.subheader("Model")
-    st.write("Current model: **Random Forest Classifier**")
-    st.write("Input type: **Tabular biomedical voice features**")
-    st.write("Output: **Healthy vs Parkinson's Disease**")
+    st.markdown(
+        """
+        ### Project pipeline
 
-st.divider()
+        `UCI voice dataset → preprocessing → Random Forest training → saved model → Streamlit demo`
+        """
+    )
 
-st.header("Try the Classifier")
+elif page == "Single Prediction":
+    st.title("Single Patient Prediction")
 
-mode = st.radio(
-    "Choose input mode:",
-    ["Use example patient", "Enter values manually"],
-    horizontal=True
-)
+    input_mode = st.radio(
+        "Choose input mode:",
+        ["Parkinson's example", "Healthy example", "Custom manual input"],
+        horizontal=True
+    )
 
-example_values = {
-    feature: 0.0 for feature in feature_columns
-}
+    if input_mode == "Parkinson's example":
+        user_input = pd_example.copy()
+        st.info("Using a pre-filled Parkinson's-like example from the dataset style.")
+    elif input_mode == "Healthy example":
+        user_input = healthy_example.copy()
+        st.info("Using a pre-filled healthy-like example from the dataset style.")
+    else:
+        user_input = {}
 
-# A reasonable sample-like input can be edited by the user.
-# These values are not diagnostic; they simply make the demo easier to use.
-default_demo_values = {
-    "MDVP:Fo(Hz)": 120.0,
-    "MDVP:Fhi(Hz)": 150.0,
-    "MDVP:Flo(Hz)": 80.0,
-    "MDVP:Jitter(%)": 0.005,
-    "MDVP:Jitter(Abs)": 0.00004,
-    "MDVP:RAP": 0.003,
-    "MDVP:PPQ": 0.003,
-    "Jitter:DDP": 0.009,
-    "MDVP:Shimmer": 0.03,
-    "MDVP:Shimmer(dB)": 0.30
-}
+        tabs = st.tabs(list(feature_groups.keys()))
 
-for feature in feature_columns:
-    if feature in default_demo_values:
-        example_values[feature] = default_demo_values[feature]
+        for tab, group_name in zip(tabs, feature_groups.keys()):
+            with tab:
+                group_features_list = feature_groups[group_name]
 
-user_input = {}
+                if not group_features_list:
+                    st.write("No features in this group.")
 
-if mode == "Use example patient":
-    st.info("Using a pre-filled example. You can switch to manual mode to edit values.")
-    user_input = example_values
+                cols = st.columns(2)
 
-    st.dataframe(pd.DataFrame([user_input]))
+                for i, feature in enumerate(group_features_list):
+                    default_value = float(pd_example.get(feature, 0.0))
+                    with cols[i % 2]:
+                        user_input[feature] = st.number_input(
+                            feature,
+                            value=default_value,
+                            format="%.6f"
+                        )
 
-else:
-    st.write("Enter biomedical voice measurements below.")
+    if input_mode != "Custom manual input":
+        st.subheader("Input Feature Values")
+        st.dataframe(pd.DataFrame([user_input]), use_container_width=True)
 
-    cols = st.columns(3)
+    st.divider()
 
-    for i, feature in enumerate(feature_columns):
-        with cols[i % 3]:
-            default_value = float(example_values.get(feature, 0.0))
-            user_input[feature] = st.number_input(
-                feature,
-                value=default_value,
-                format="%.6f"
-            )
+    if st.button("Run Prediction", type="primary"):
+        prediction, probability, input_df = make_prediction(model, feature_columns, user_input)
 
-st.divider()
+        result_col, prob_col = st.columns([1, 1])
 
-if st.button("Run Prediction", type="primary"):
-    prediction, probability, input_df = predict(model, feature_columns, user_input)
+        with result_col:
+            if prediction == 1:
+                st.error("Prediction: Parkinson's Disease")
+            else:
+                st.success("Prediction: Healthy")
 
-    result_col, confidence_col = st.columns(2)
+        with prob_col:
+            st.metric("Probability of Parkinson's", f"{probability:.2%}")
+            st.progress(float(probability))
 
-    with result_col:
-        if prediction == 1:
-            st.error("Prediction: Parkinson's Disease")
+        st.subheader("Explanation")
+        st.write(explain_prediction(probability))
+
+        st.subheader("Model Input Used")
+        st.dataframe(input_df, use_container_width=True)
+
+elif page == "Batch Prediction":
+    st.title("Batch Prediction")
+
+    st.write(
+        """
+        Upload a CSV file with the same feature columns used during training.
+        The app will return predictions and Parkinson's probabilities for every row.
+        """
+    )
+
+    uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+
+    if uploaded_file is not None:
+        batch_df = pd.read_csv(uploaded_file)
+
+        if "name" in batch_df.columns:
+            batch_df = batch_df.drop(columns=["name"])
+
+        if "status" in batch_df.columns:
+            true_labels = batch_df["status"]
+            batch_df = batch_df.drop(columns=["status"])
         else:
-            st.success("Prediction: Healthy")
+            true_labels = None
 
-    with confidence_col:
-        st.metric(
-            "Estimated Probability of Parkinson's",
-            f"{probability:.2%}"
+        batch_df = batch_df.reindex(columns=feature_columns)
+
+        predictions = model.predict(batch_df)
+        probabilities = model.predict_proba(batch_df)[:, 1]
+
+        results = batch_df.copy()
+        results["prediction"] = predictions
+        results["prediction_label"] = np.where(predictions == 1, "Parkinson's Disease", "Healthy")
+        results["parkinsons_probability"] = probabilities
+
+        st.subheader("Batch Results")
+        st.dataframe(results, use_container_width=True)
+
+        csv = results.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            "Download Predictions as CSV",
+            csv,
+            "parkinsons_predictions.csv",
+            "text/csv"
         )
 
-    st.subheader("Prediction Interpretation")
+elif page == "Model Insights":
+    st.title("Model Insights")
 
-    if probability >= 0.75:
-        st.write("The model is highly confident in a Parkinson's-positive prediction.")
-    elif probability >= 0.50:
-        st.write("The model leans toward Parkinson's-positive, but confidence is moderate.")
-    elif probability >= 0.25:
-        st.write("The model leans toward healthy, but confidence is moderate.")
-    else:
-        st.write("The model is highly confident in a healthy prediction.")
+    st.subheader("Model Summary")
+    st.write("The deployed model is a Random Forest classifier trained on UCI Parkinson's voice features.")
 
-    st.subheader("Input Summary")
-    st.dataframe(input_df)
+    st.markdown(
+        """
+        ### Evaluation metrics used during training
 
-st.divider()
+        - Accuracy
+        - Precision
+        - Recall
+        - F1-score
+        - ROC-AUC
 
-st.subheader("About This Project")
-st.write(
-    """
-    This prototype was built as a machine learning class project. 
-    It uses the UCI Parkinson's voice dataset and demonstrates a complete applied ML pipeline:
-    data preprocessing, model training, evaluation, saving model artifacts, and deploying an interactive demo.
-    """
-)
+        These metrics are used because the task is a binary classification problem.
+        """
+    )
+
+    if hasattr(model.named_steps["classifier"], "feature_importances_"):
+        importances = model.named_steps["classifier"].feature_importances_
+
+        importance_df = pd.DataFrame({
+            "Feature": feature_columns,
+            "Importance": importances
+        }).sort_values("Importance", ascending=False)
+
+        st.subheader("Top Feature Importances")
+        st.dataframe(importance_df, use_container_width=True)
+
+        st.bar_chart(importance_df.set_index("Feature").head(15))
+
+    st.subheader("Interpretability Note")
+    st.write(
+        """
+        Feature importance shows which variables the Random Forest used most often to split the data.
+        This does not prove clinical causality, but it helps explain which acoustic measurements were most useful
+        for the classifier.
+        """
+    )
+
+elif page == "About":
+    st.title("About This Project")
+
+    st.markdown(
+        """
+        ### Project idea
+
+        This project builds a Parkinson's Disease classifier using biomedical voice features.
+
+        ### Motivation
+
+        The project is motivated by prior research experience in Parkinson's-focused healthcare AI,
+        including work on multimodal motor scoring and scalable AI systems for clinical assessment.
+
+        ### Dataset
+
+        The project uses the UCI Parkinson's dataset. The target variable is `status`,
+        where `1` indicates Parkinson's Disease and `0` indicates healthy.
+
+        ### Main system components
+
+        - `train.py`: training and evaluation pipeline
+        - `predict.py`: reusable prediction logic
+        - `app.py`: Streamlit frontend
+        - `model/`: saved trained model and feature list
+
+        ### Disclaimer
+
+        This prototype is for class demonstration and educational use only.
+        It is not intended for diagnosis or medical decision-making.
+        """
+    )
