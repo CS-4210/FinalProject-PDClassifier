@@ -20,11 +20,22 @@ MODEL_DIR = "model"
 def load_data(path=DATA_PATH):
     df = pd.read_csv(path)
 
+    # Remove accidental whitespace from column names
+    df.columns = df.columns.str.strip()
+
+    # Drop non-numeric identifier column
     if "name" in df.columns:
         df = df.drop(columns=["name"])
 
+    # Make sure target exists
+    if "status" not in df.columns:
+        raise ValueError("Expected target column 'status' was not found.")
+
     X = df.drop(columns=["status"])
     y = df["status"]
+
+    # Force features to numeric
+    X = X.apply(pd.to_numeric, errors="coerce")
 
     return X, y
 
