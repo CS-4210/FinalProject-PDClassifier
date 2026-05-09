@@ -6,6 +6,7 @@ import numpy as np
 
 MODEL_PATH = "model/parkinsons_model.pkl"
 FEATURE_PATH = "model/feature_columns.pkl"
+DATA_PATH = "data/parkinsons.data"
 
 
 @st.cache_resource
@@ -51,65 +52,23 @@ def group_features(feature_columns):
     return groups
 
 
-def get_default_examples(feature_columns):
-    healthy_example = {feature: 0.0 for feature in feature_columns}
-    pd_example = {feature: 0.0 for feature in feature_columns}
+@st.cache_data
+def load_example_patients(feature_columns):
+    df = pd.read_csv(DATA_PATH)
+    df.columns = df.columns.str.strip()
 
-    healthy_values = {
-        "MDVP:Fo(Hz)": 198.116,
-        "MDVP:Fhi(Hz)": 233.099,
-        "MDVP:Flo(Hz)": 174.478,
-        "MDVP:Jitter(%)": 0.00298,
-        "MDVP:Jitter(Abs)": 0.000015,
-        "MDVP:RAP": 0.00153,
-        "MDVP:PPQ": 0.00173,
-        "Jitter:DDP": 0.00459,
-        "MDVP:Shimmer": 0.01921,
-        "MDVP:Shimmer(dB)": 0.165,
-        "Shimmer:APQ3": 0.01013,
-        "Shimmer:APQ5": 0.01263,
-        "MDVP:APQ": 0.01512,
-        "Shimmer:DDA": 0.03039,
-        "NHR": 0.01035,
-        "HNR": 26.138,
-        "RPDE": 0.414783,
-        "DFA": 0.815285,
-        "spread1": -4.813031,
-        "spread2": 0.266482,
-        "D2": 2.301442,
-        "PPE": 0.284654
-    }
+    # Real examples from dataset
+    healthy_row = df[df["status"] == 0].iloc[0]
+    pd_row = df[df["status"] == 1].iloc[0]
 
-    pd_values = {
-        "MDVP:Fo(Hz)": 119.992,
-        "MDVP:Fhi(Hz)": 157.302,
-        "MDVP:Flo(Hz)": 74.997,
-        "MDVP:Jitter(%)": 0.00784,
-        "MDVP:Jitter(Abs)": 0.00007,
-        "MDVP:RAP": 0.00370,
-        "MDVP:PPQ": 0.00554,
-        "Jitter:DDP": 0.01109,
-        "MDVP:Shimmer": 0.04374,
-        "MDVP:Shimmer(dB)": 0.426,
-        "Shimmer:APQ3": 0.02182,
-        "Shimmer:APQ5": 0.03130,
-        "MDVP:APQ": 0.02971,
-        "Shimmer:DDA": 0.06545,
-        "NHR": 0.02211,
-        "HNR": 21.033,
-        "RPDE": 0.414783,
-        "DFA": 0.815285,
-        "spread1": -4.813031,
-        "spread2": 0.266482,
-        "D2": 2.301442,
-        "PPE": 0.284654
-    }
+    # Remove non-feature columns
+    drop_cols = ["name", "sourcname", "status"]
 
-    for feature in feature_columns:
-        if feature in healthy_values:
-            healthy_example[feature] = healthy_values[feature]
-        if feature in pd_values:
-            pd_example[feature] = pd_values[feature]
+    healthy_row = healthy_row.drop(labels=[c for c in drop_cols if c in healthy_row.index])
+    pd_row = pd_row.drop(labels=[c for c in drop_cols if c in pd_row.index])
+
+    healthy_example = healthy_row.reindex(feature_columns).astype(float).to_dict()
+    pd_example = pd_row.reindex(feature_columns).astype(float).to_dict()
 
     return healthy_example, pd_example
 
@@ -146,7 +105,7 @@ st.set_page_config(
 
 model, feature_columns = load_artifacts()
 feature_groups = group_features(feature_columns)
-healthy_example, pd_example = get_default_examples(feature_columns)
+healthy_example, pd_example = load_example_patients(feature_columns)
 
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
