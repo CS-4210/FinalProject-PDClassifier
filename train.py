@@ -19,23 +19,28 @@ MODEL_DIR = "model"
 
 def load_data(path=DATA_PATH):
     df = pd.read_csv(path)
-
-    # Remove accidental whitespace from column names
     df.columns = df.columns.str.strip()
 
-    # Drop non-numeric identifier column
-    if "name" in df.columns:
-        df = df.drop(columns=["name"])
-
-    # Make sure target exists
     if "status" not in df.columns:
         raise ValueError("Expected target column 'status' was not found.")
 
-    X = df.drop(columns=["status"])
     y = df["status"]
 
-    # Force features to numeric
+    X = df.drop(columns=["status"])
+
+    # Drop known identifier / bad columns
+    columns_to_drop = ["name", "sourcname"]
+    X = X.drop(columns=[col for col in columns_to_drop if col in X.columns])
+
+    # Keep only numeric features
     X = X.apply(pd.to_numeric, errors="coerce")
+
+    # Drop columns that became entirely NaN
+    X = X.dropna(axis=1, how="all")
+
+    print("Final training features:")
+    print(X.columns.tolist())
+    print("Number of features:", X.shape[1])
 
     return X, y
 
@@ -114,6 +119,13 @@ def save_artifacts(model, feature_columns):
 
 def main():
     X, y = load_data()
+
+    # test 
+    print("Current working directory:", os.getcwd())
+    print("Training data shape:", X.shape)
+    print("Features used for training:")
+    print(X.columns.tolist())
+    print("Contains name?", "name" in X.columns)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
