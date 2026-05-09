@@ -14,29 +14,51 @@ pip install -r requirements.txt
 
 ## How to Run
 
-### 1. Train the model
+### Option 1 — Run full pipeline 
+
+#### 1. Train the model
 
 ```bash
 python train.py
 ```
 
-This saves the trained model to:
+This generates:
 
 ```text
 model/parkinsons_model.pkl
 model/feature_columns.pkl
 ```
 
-### 2. Run the website
+#### 2. Run the website
 
 ```bash
 streamlit run app.py
 ```
 
-Open the link shown in the terminal:
+Open:
+
 ```text
 http://localhost:8501
 ```
+
+---
+
+### Option 2 — Run website only (no training)
+
+Because the `model/` folder already contains:
+
+```text
+parkinsons_model.pkl
+feature_columns.pkl
+```
+
+you can skip training and directly run:
+
+```bash
+streamlit run app.py
+```
+
+---
 
 ## Main Files
 
